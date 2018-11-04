@@ -35,6 +35,8 @@ Well, half that rate would actually be good enough, so I changed the way I send 
 This worked well and the last touch was to assign the channels to the correct game controller functions.
 I connected to windows and it was identified as a game controller in the Devices and Printers page. Right-click and open Game controller settings, then click Properties. Testing one stick movement at a time I could find out how to map the transmitter channels to joystick functions.
 
+(And now the symbolic link above is not needed. Autodiscovery works fine also on Linux. Suppose it was only necessary for FMSPIC, which is a serial interface)
+
 The final step was to build a small box. I just cut some plywood and glued together. I mounted the board and the USB cable inside using a little hot glue, and then wrapped it all with tape.
 
 [Here](../../../raw/master/Rc-Control/Rc-Control.ino) is the final sketch.
