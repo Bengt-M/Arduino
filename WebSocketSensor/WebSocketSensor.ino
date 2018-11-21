@@ -23,8 +23,8 @@ static const char *NTPServerName = "time.nist.gov";
 static const int NTP_PACKET_SIZE = 48;  // NTP time stamp is in the first 48 bytes of the message
 byte NTPBuffer[NTP_PACKET_SIZE]; // buffer to hold incoming and outgoing packets
 
-static const char *OTAName = "ESP8266";   // A name and a password for the OTA service
-static const char *OTAPassword = "esp8266";
+static const char *OTAName = "ESP8266";   // A name and a password for the OTA service TODO: move to Password.h
+static const char *OTAPassword = "esp8266"; // TODO: move to Password.h
 static const char *mdnsName = "esp8266";  // Domain name for the mDNS responder
 static const uint8_t pin = 2;
 
@@ -70,6 +70,7 @@ void setup()
     startServer();               // Start a HTTP server with a file read handler and an upload handler
     Wire.begin();
     startUDP();
+    // Here is a way to get the IP from DNS. I use a NTP in my router and knows its IP always
     //    if (!WiFi.hostByName(NTPServerName, timeServerIP)) { // Get the IP address of the NTP server
     //        Serial.println("DNS lookup failed. Rebooting.");
     //        Serial.flush();
@@ -78,20 +79,13 @@ void setup()
     Serial.println(timeServerIP);
     root.printTo(Serial);
     Serial.println();
-
     sendNTPpacket(timeServerIP);               // Send an NTP request
-
+    // create the json structure
     JsonArray& col = loggerroot.createNestedArray("col");
     col.add("Time");
     col.add("Temperature");
     col.add("Humidity");
-
-    //    TODO: obra
-    //    File file = SPIFFS.open("/data.json", "r");
-    //    loggerroot["data"] = loggerdoc.parseArray(file);
-    //    file.close();
-    // loggerroot["data"] = loggerdoc.parseArray(file);
-
+    // read saved logger data from file
     File file = SPIFFS.open("/data.txt", "r");
     while (file.available()) {
         JsonArray& point = data.createNestedArray();
@@ -322,44 +316,28 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t lenght)
             Serial.printf("[%u] get Text: %s\n", num, payload);
             if (payload[0] == '1') {          // the browser sends a 1 when the power is enabled
                 powerOn(true);
-            } else if (payload[0] == '0') {
+            } else if (payload[0] == '0') {   // ...and a 0 when it is off
                 powerOn(false);
-            } else if (payload[0] == 'S') {
+            } else if (payload[0] == 'S') {   // Save all logger data to a SPIFFS file
                 File file = SPIFFS.open("/data.txt", "w");
-                if (!file) {
+                if (file) {
+                    String output;
+                    for (auto value : data) {
+                        JsonArray& point = value.as<JsonArray&>();
+                        file.print(point[0].as<String>());
+                        file.print(';');
+                        file.print(point[1].as<String>());
+                        file.print(';');
+                        file.println(point[2].as<String>());
+                    }
+                    file.close();
+                } else {
                     Serial.println("Failed to create file");
-                    return;
                 }
-                // Serialize JSON to file
+            } else if (payload[0] == 'q') { // query for all logger data
                 String output;
-                Serial.println("On S, 1");
-
-
-
-                for (auto value : data) {
-                    JsonArray& point = value.as<JsonArray&>();
-                    file.print(point[0].as<String>());
-                    file.print(';');
-                    file.print(point[1].as<String>());
-                    file.print(';');
-                    file.println(point[2].as<String>());
-
-                }
-                //                data.printTo(output);
-                //                Serial.println("On S, 2");
-                //                Serial.println(output);
-                //                if (data.printTo(file) == 0) {
-                //                    Serial.println("Failed to write to file");
-                //                }
-                file.close();
-            } else if (payload[0] == 'q') {
-                Serial.println("On q, 1");
-                String output;
-                Serial.println("On q, 2");
                 loggerroot.printTo(output);
-                Serial.println("On q, 3");
-                Serial.println(output);
-                Serial.println("On q, 4");
+                // Serial.println(output);
                 webSocket.sendTXT(num, output);
             }
             break;
@@ -378,6 +356,7 @@ void printSPIFFS()
         size_t fileSize = dir.fileSize();
         Serial.printf("\tFS File: %s, size: %s\r\n", fileName.c_str(), formatBytes(fileSize).c_str());
     }
+    // TODO: also print free space
     Serial.println();
 }
 
@@ -410,10 +389,10 @@ String getContentType(String filename)   // determine the filetype of a given fi
 
 void powerOn()
 {
-    powerOn(powerOnStatus);
+    powerOn(powerOnStatus); // default is current status
 }
 
-void powerOn(boolean on)
+void powerOn(boolean on)   // set the pin, read status, send to all connected clients
 {
     powerOnStatus = on;
     digitalWrite(pin, on);
@@ -448,10 +427,8 @@ uint16_t CRC16(uint8_t *ptr, uint8_t length)
 void sendNTPpacket(IPAddress& address)
 {
     memset(NTPBuffer, 0, NTP_PACKET_SIZE);  // set all bytes in the buffer to 0
-    // Initialize values needed to form NTP request
-    NTPBuffer[0] = 0b11100011;
-    UDP.beginPacket(address, 123);
-    // NTP requests are to port 123
+    NTPBuffer[0] = 0b11100011;              // Initialize values needed to form NTP request
+    UDP.beginPacket(address, 123);          // NTP requests are to port 123
     UDP.write(NTPBuffer, NTP_PACKET_SIZE);
     UDP.endPacket();
 }
@@ -505,23 +482,12 @@ void tempHumidHandle()
             Serial.println("Sensor offline");
             break;
         case 0:
-            //            Serial.print("\thumidity: ");
-            //            Serial.print(h, 0);
-            //            Serial.print("%, temperature: ");
-            //            Serial.print(t, 1);
-            //            Serial.println("*C");
             root["t"] = t;
             root["h"] = h;
             root["p"] = powerOnStatus;
             String output;
             root.printTo(output);
-            //            Serial.print(millis());
-            //            Serial.println();
-            //            Serial.println(output);
-            //            addLogData();//TODO: Remove this after testing filling logger
-            //            addLogData();//TODO: Remove this after testing filling logger
-            //            addLogData();//TODO: Remove this after testing filling logger
-            //            addLogData();//TODO: Remove this after testing filling logger
+            // addLogData(); // uncomment for testing filling logger quicker
             webSocket.broadcastTXT(output);
             break;
     }
@@ -565,8 +531,8 @@ int tempHumidRead()
 void addLogData()
 {
     if (UNIXTime > 0) {
-        if (data.size() > 237) {
-            data.remove(0);
+        if (data.size() > 237) { // max num log points, tune together with json buffer
+            data.remove(0);      // recycle
         }
         JsonArray& point = data.createNestedArray();
         currentTime = UNIXTime + (millis() - lastNTPResponse) / 1000;
@@ -577,7 +543,7 @@ void addLogData()
         Serial.println(loggerdoc.size());
         Serial.print("siz\t");
         Serial.println(data.size());
-        loggerroot.printTo(Serial);
+        // loggerroot.printTo(Serial);
         Serial.println();
     }
 }
