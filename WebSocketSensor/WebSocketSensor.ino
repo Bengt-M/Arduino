@@ -33,8 +33,8 @@ float t = 20.0;
 float h = 40.0;
 uint32_t interval = 100; // ms
 boolean sleeping = true;
-static const uint32_t intervalTempHumidRead = 3000; // ms
-uint32_t prevTempHumidRead = 0; // ms
+static const uint32_t intervalreadSensor = 3000; // ms
+uint32_t prevreadSensor = 0; // ms
 uint32_t UNIXTime = 0;
 
 //static const uint32_t intervalNTPStd = 5 * 1000; // ms
@@ -85,27 +85,7 @@ void setup()
     col.add("Time");
     col.add("Temperature");
     col.add("Humidity");
-    // read saved logger data from file
-    File file = SPIFFS.open("/data.txt", "r");
-    while (file.available()) {
-        JsonArray& point = data.createNestedArray();
-        String str = file.readStringUntil(';');
-        if (str.length() == 0) {
-            break;
-        }
-        point.add(str.toInt());
-        str = file.readStringUntil(';');
-        if (str.length() == 0) {
-            break;
-        }
-        point.add(str.toFloat());
-        str = file.readStringUntil('\n');
-        if (str.length() == 0) {
-            break;
-        }
-        point.add(str.toFloat());
-    }
-    file.close();
+    readLogData();
 }
 
 /*__________________________________________________________LOOP__________________________________________________________*/
@@ -118,17 +98,17 @@ void loop()
 
     /*___________ TempHumid sensor ___________*/
     uint32_t currentMillis = millis();
-    if ((currentMillis - prevTempHumidRead) >= interval) {
+    if ((currentMillis - prevreadSensor) >= interval) {
         if (sleeping) {
-            tempHumidWakeup();
+            wakeupSensor();
             interval = 2;
             sleeping = false;
         } else {
-            tempHumidHandle();
-            interval = intervalTempHumidRead;
+            handleSensorData();
+            interval = intervalreadSensor;
             sleeping = true;
         }
-        prevTempHumidRead = currentMillis;
+        prevreadSensor = currentMillis;
     }
 
     /*___________ send ntp request ___________*/
@@ -141,7 +121,7 @@ void loop()
     }
 
     /*___________ handle ntp response (if any) ___________*/
-    ntpResponseHandle(currentMillis);
+    handleNtpResponse(currentMillis);
 }
 
 /*__________________________________________________________SETUP_FUNCTIONS__________________________________________________________*/
@@ -234,6 +214,7 @@ void startUDP()
     Serial.println(UDP.localPort());
     Serial.println();
 }
+
 /*__________________________________________________________SERVER_HANDLERS__________________________________________________________*/
 
 void handleNotFound()   // if the requested file or page doesn't exist, return a 404 not found error
@@ -319,21 +300,7 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t lenght)
             } else if (payload[0] == '0') {   // ...and a 0 when it is off
                 powerOn(false);
             } else if (payload[0] == 'S') {   // Save all logger data to a SPIFFS file
-                File file = SPIFFS.open("/data.txt", "w");
-                if (file) {
-                    String output;
-                    for (auto value : data) {
-                        JsonArray& point = value.as<JsonArray&>();
-                        file.print(point[0].as<String>());
-                        file.print(';');
-                        file.print(point[1].as<String>());
-                        file.print(';');
-                        file.println(point[2].as<String>());
-                    }
-                    file.close();
-                } else {
-                    Serial.println("Failed to create file");
-                }
+                saveLogData();
             } else if (payload[0] == 'q') { // query for all logger data
                 String output;
                 loggerroot.printTo(output);
@@ -433,7 +400,7 @@ void sendNTPpacket(IPAddress& address)
     UDP.endPacket();
 }
 
-void ntpResponseHandle(uint32_t currentMillis)
+void handleNtpResponse(uint32_t currentMillis)
 {
     if (UDP.parsePacket() > 0) { // If there's data
         UDP.read(NTPBuffer, NTP_PACKET_SIZE); // read the packet into the buffer
@@ -472,28 +439,7 @@ inline int getHours(uint32_t UNIXTime)
     return UNIXTime / 3600 % 24;
 }
 
-void tempHumidHandle()
-{
-    switch (tempHumidRead()) {
-        case 2:
-            Serial.println("CRC failed");
-            break;
-        case 1:
-            Serial.println("Sensor offline");
-            break;
-        case 0:
-            root["t"] = t;
-            root["h"] = h;
-            root["p"] = powerOnStatus;
-            String output;
-            root.printTo(output);
-            // addLogData(); // uncomment for testing filling logger quicker
-            webSocket.broadcastTXT(output);
-            break;
-    }
-}
-
-int tempHumidWakeup()
+int wakeupSensor()
 {
     Wire.beginTransmission(address);
     Wire.endTransmission();
@@ -504,7 +450,7 @@ int tempHumidWakeup()
     return Wire.endTransmission();
 }
 
-int tempHumidRead()
+int readSensor()
 {
     Wire.requestFrom(address, (uint8_t)0x08);
     for (int i = 0; i < 0x08; i++) {
@@ -528,6 +474,27 @@ int tempHumidRead()
     return 2;
 }
 
+void handleSensorData()
+{
+    switch (readSensor()) {
+        case 2:
+            Serial.println("CRC failed");
+            break;
+        case 1:
+            Serial.println("Sensor offline");
+            break;
+        case 0:
+            root["t"] = t;
+            root["h"] = h;
+            root["p"] = powerOnStatus;
+            String output;
+            root.printTo(output);
+            // addLogData(); // uncomment for testing filling logger quicker
+            webSocket.broadcastTXT(output);
+            break;
+    }
+}
+
 void addLogData()
 {
     if (UNIXTime > 0) {
@@ -548,3 +515,47 @@ void addLogData()
     }
 }
 
+void readLogData()
+{
+    // read saved logger data from file
+    File file = SPIFFS.open("/data.txt", "r");
+    while (file.available()) {
+        JsonArray& point = data.createNestedArray();
+        String str = file.readStringUntil(';');
+        if (str.length() == 0) {
+            break;
+        }
+        point.add(str.toInt());
+        str = file.readStringUntil(';');
+        if (str.length() == 0) {
+            break;
+        }
+        point.add(str.toFloat());
+        str = file.readStringUntil('\n');
+        if (str.length() == 0) {
+            break;
+        }
+        point.add(str.toFloat());
+    }
+
+    file.close();
+}
+
+void saveLogData()
+{
+    File file = SPIFFS.open("/data.txt", "w");
+    if (file) {
+        String output;
+        for (auto value : data) {
+            JsonArray& point = value.as<JsonArray&>();
+            file.print(point[0].as<String>());
+            file.print(';');
+            file.print(point[1].as<String>());
+            file.print(';');
+            file.println(point[2].as<String>());
+        }
+        file.close();
+    } else {
+        Serial.println("Failed to create file");
+    }
+}
