@@ -1,0 +1,98 @@
+<html>
+  <head>
+    <title>History</title>
+    <link href='main.css' rel='stylesheet' type='text/css'>
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon-180x180.png">
+    <link rel="icon" type="image/png" sizes="144x144"  href="/favicon-144x144.png">
+    <link rel="icon" type="image/png" sizes="48x48" href="/favicon.ico">
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#00878f">
+    <meta content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0' name='viewport'>
+    <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+    <link href='main.css' rel='stylesheet' type='text/css'>
+    <script type="text/javascript">
+google.charts.load('current', {'packages':['line','table'], 'callback':drawChart});
+var connection = new WebSocket('ws://'+location.hostname+':81/', ['arduino']);
+var jsonObject = JSON.parse("[{\"Nam\":\"val1\",\"Num\":1},{\"Nam\":\"val2\",\"Num\":2}]");
+var btn1Enable = true;
+
+connection.onopen = function () {
+	connection.send('Connect ' + new Date());
+	connection.send("q");
+};
+connection.onerror = function (error) {
+	console.log('WebSocket Error ', error);
+};
+connection.onmessage = function (e) {
+	//console.log('Server: ', e);
+	console.log(JSON.parse(e.data));
+	//console.log(JSON.parse(e.data).length);
+	if (e.data.length>35) {
+		jsonObject = JSON.parse(e.data);
+		console.log("col", jsonObject["col"]);
+		console.log("data", jsonObject["data"]);
+		drawChart();
+	}
+};
+connection.onclose = function(){
+	console.log('WebSocket connection closed');
+};
+function drawChart() {
+	console.log("col", jsonObject["col"]);
+	console.log("data", jsonObject["data"]);
+	if (jsonObject["col"]) {
+		var chartDiv = document.getElementById('chart_div');
+		var data = new google.visualization.DataTable();
+		for (i=0;i<jsonObject["col"].length;++i){
+			data.addColumn('number', jsonObject["col"][i]);
+		}
+		for (i=0;i<jsonObject["data"].length;++i){
+			data.addRow(jsonObject["data"][i]);
+		}
+		var materialOptions = {
+			chart: {
+				title: 'History'
+			},
+			width: 750,
+			height: 500,
+			series: {
+				// Gives each series an axis name that matches the Y-axis below.
+				0: {axis: 'Temperature'},
+				1: {axis: 'Humidity'}
+			},
+			axes: {
+				// Adds labels to each axis; they don't have to match the axis names.
+				y: {
+					Temperature: {label: 'Temperature'},
+					Humidity: {label: 'Humidity'}
+				}
+			}
+		};
+		var materialChart = new google.charts.Line(chartDiv);
+		materialChart.draw(data, materialOptions);
+
+		document.getElementById('count').innerHTML = jsonObject["data"].length;
+	}
+}
+function onBtn1(){
+	if (btn1Enable) {
+		btn1Enable = false;
+		document.getElementById('btn1').style.backgroundColor = '#999';
+		connection.send('S');
+	}
+}
+
+    </script>
+  </head>
+  <body>
+   <div id="chart_div"></div>
+          <div>
+           <a class="button" href="/">Back</a>
+	   <p style="margin:8px 0px">
+            	<button id="btn1" class="button" style="background-color:#00878F" onclick="onBtn1();">Save</button>
+            </p>
+	    <p id=count>0000</p>
+        </div>
+
+  </body>
+</html>
