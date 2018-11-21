@@ -8,6 +8,9 @@
 #include <WiFiUdp.h>
 #include <ArduinoJson.h>
 
+//--- include this with your ssid and password
+#include "Password.h"
+
 ESP8266WiFiMulti wifiMulti;        // Create an instance of the ESP8266WiFiMulti class, called 'wifiMulti'
 ESP8266WebServer server(80);       // create a web server on port 80
 WebSocketsServer webSocket(81);    // create a websocket server on port 81
@@ -152,7 +155,7 @@ void loop()
 void startWiFi()   // Start try to connect to some given access points. Then wait for connection
 {
     WiFi.persistent(true);
-    wifiMulti.addAP(SSID, PWD);    // add Wi-Fi networks you want to connect to
+    wifiMulti.addAP(WiFiNetwork, Password);    // add Wi-Fi networks you want to connect to (see Password.h)
     Serial.println("Connecting");
     while (wifiMulti.run() != WL_CONNECTED) {       // Wait for the Wi-Fi to connect
         delay(250);
