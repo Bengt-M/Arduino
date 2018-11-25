@@ -2,11 +2,12 @@
 #include <ESP8266WiFiMulti.h>
 #include <ArduinoOTA.h>
 #include <ESP8266WebServer.h>
-#include <FS.h>
 #include <WebSocketsServer.h>
 #include <Wire.h>
 #include <WiFiUdp.h>
 #include <ArduinoJson.h>
+
+#include "Logger.h"
 
 //--- include this with your ssid and password
 #include "Password.h"
@@ -19,15 +20,15 @@ bool powerOnStatus = false;        // The power relay is turned off on startup
 uint8_t buf[8] = {0};
 WiFiUDP UDP;
 IPAddress timeServerIP(10, 45, 77, 1);       // NTP server address
-static const char *NTPServerName = "time.nist.gov";
+//static const char* NTPServerName = "time.nist.gov";
 static const int NTP_PACKET_SIZE = 48;  // NTP time stamp is in the first 48 bytes of the message
 byte NTPBuffer[NTP_PACKET_SIZE]; // buffer to hold incoming and outgoing packets
 
 static const uint8_t pin = 2;
 
 static const uint8_t address = 0xB8 >> 1;
-float t = 20.0;
-float h = 40.0;
+float temperature = 20.0;
+float humidity = 40.0;
 uint32_t interval = 100; // ms
 boolean sleeping = true;
 static const uint32_t intervalTempHumidRead = 3000; // ms
@@ -44,9 +45,7 @@ uint32_t currentTime = 0;
 StaticJsonBuffer<80> doc;
 JsonObject& root = doc.createObject();
 
-StaticJsonBuffer<23000> loggerdoc;
-JsonObject& loggerroot = loggerdoc.createObject();
-JsonArray& data = loggerroot.createNestedArray("data");
+Logger logger;
 
 /*__________________________________________________________SETUP__________________________________________________________*/
 
@@ -76,33 +75,8 @@ void setup()
     Serial.println(timeServerIP);
     root.printTo(Serial);
     Serial.println();
+    logger.init();
     sendNTPpacket(timeServerIP);               // Send an NTP request
-    // create the json structure
-    JsonArray& col = loggerroot.createNestedArray("col");
-    col.add("Time");
-    col.add("Temperature");
-    col.add("Humidity");
-    // read saved logger data from file
-    File file = SPIFFS.open("/data.txt", "r");
-    while (file.available()) {
-        JsonArray& point = data.createNestedArray();
-        String str = file.readStringUntil(';');
-        if (str.length() == 0) {
-            break;
-        }
-        point.add(str.toInt());
-        str = file.readStringUntil(';');
-        if (str.length() == 0) {
-            break;
-        }
-        point.add(str.toFloat());
-        str = file.readStringUntil('\n');
-        if (str.length() == 0) {
-            break;
-        }
-        point.add(str.toFloat());
-    }
-    file.close();
 }
 
 /*__________________________________________________________LOOP__________________________________________________________*/
@@ -209,7 +183,8 @@ void startSPIFFS()   // Start the SPIFFS and list all contents
 void startWebSocket()   // Start a WebSocket server
 {
     webSocket.begin();                          // start the websocket server
-    webSocket.onEvent(webSocketEvent);          // if there's an incomming websocket message, go to function 'webSocketEvent'
+    webSocket.onEvent(
+        webSocketEvent);          // if there's an incomming websocket message, go to function 'webSocketEvent'
     Serial.println("WebSocket server started");
 }
 
@@ -218,7 +193,8 @@ void startServer()   // Start a HTTP server with a file read handler and an uplo
     server.on("/edit.html",  HTTP_POST, []() {  // If a POST request is sent to the /edit.html address,
         server.send(200, "text/plain", "");
     }, handleFileUpload);                       // go to 'handleFileUpload'
-    server.onNotFound(handleNotFound);          // if someone requests any other file or page, go to function 'handleNotFound' and check if the file exists
+    server.onNotFound(
+        handleNotFound);          // if someone requests any other file or page, go to function 'handleNotFound' and check if the file exists
     server.begin();                             // start the HTTP server
     Serial.println("HTTP server started.");
 }
@@ -246,7 +222,8 @@ bool handleFileRead(String path)   // send the right file to the client (if it e
     if (path.endsWith("/")) path += "index.html";              // If a folder is requested, send the index file
     String contentType = getContentType(path);                 // Get the MIME type
     String pathWithGz = path + ".gz";
-    if (SPIFFS.exists(pathWithGz) || SPIFFS.exists(path)) {    // If the file exists, either as a compressed archive, or normal
+    if (SPIFFS.exists(pathWithGz)
+        || SPIFFS.exists(path)) {    // If the file exists, either as a compressed archive, or normal
         if (SPIFFS.exists(pathWithGz)) {                       // If there's a compressed version available
             path += ".gz";                                     // Use the compressed verion
         }
@@ -278,7 +255,8 @@ void handleFileUpload()   // upload a new file to the SPIFFS
                 SPIFFS.remove(pathWithGz);                   // version of that file must be deleted (if it exists)
             }
         }
-        Serial.print("handleFileUpload Name: "); Serial.println(path);
+        Serial.print("handleFileUpload Name: ");
+        Serial.println(path);
         fsUploadFile = SPIFFS.open(path, "w");            // Open the file for writing in SPIFFS (create if it doesn't exist)
         path = String();
     } else if (upload.status == UPLOAD_FILE_WRITE) {
@@ -288,7 +266,8 @@ void handleFileUpload()   // upload a new file to the SPIFFS
     } else if (upload.status == UPLOAD_FILE_END) {
         if (fsUploadFile) {                                   // If the file was successfully created
             fsUploadFile.close();                               // Close the file again
-            Serial.print("handleFileUpload Size: "); Serial.println(upload.totalSize);
+            Serial.print("handleFileUpload Size: ");
+            Serial.println(upload.totalSize);
             server.sendHeader("Location", "/success.html");     // Redirect the client to the success page
             server.send(303);
         } else {
@@ -297,7 +276,8 @@ void handleFileUpload()   // upload a new file to the SPIFFS
     }
 }
 
-void webSocketEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t lenght)    // When a WebSocket message is received
+void webSocketEvent(uint8_t num, WStype_t type, uint8_t* payload,
+                    size_t lenght)    // When a WebSocket message is received
 {
     switch (type) {
         case WStype_DISCONNECTED:             // if the websocket is disconnected
@@ -316,24 +296,10 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t *payload, size_t lenght)
             } else if (payload[0] == '0') {   // ...and a 0 when it is off
                 powerOn(false);
             } else if (payload[0] == 'S') {   // Save all logger data to a SPIFFS file
-                File file = SPIFFS.open("/data.txt", "w");
-                if (file) {
-                    String output;
-                    for (auto value : data) {
-                        JsonArray& point = value.as<JsonArray&>();
-                        file.print(point[0].as<String>());
-                        file.print(';');
-                        file.print(point[1].as<String>());
-                        file.print(';');
-                        file.println(point[2].as<String>());
-                    }
-                    file.close();
-                } else {
-                    Serial.println("Failed to create file");
-                }
+                logger.writeLoggerFile();
             } else if (payload[0] == 'q') { // query for all logger data
                 String output;
-                loggerroot.printTo(output);
+                logger.getAllData(&output);
                 // Serial.println(output);
                 webSocket.sendTXT(num, output);
             }
@@ -393,8 +359,8 @@ void powerOn(boolean on)   // set the pin, read status, send to all connected cl
 {
     powerOnStatus = on;
     digitalWrite(pin, on);
-    root["t"] = t;
-    root["h"] = h;
+    root["t"] = temperature;
+    root["h"] = humidity;
     root["p"] = on;
     root.printTo(Serial);
     String output;
@@ -402,7 +368,7 @@ void powerOn(boolean on)   // set the pin, read status, send to all connected cl
     webSocket.broadcastTXT(output);
 }
 
-uint16_t CRC16(uint8_t *ptr, uint8_t length)
+uint16_t CRC16(uint8_t* ptr, uint8_t length)
 {
     uint16_t crc = 0xFFFF;
     uint8_t s = 0x00;
@@ -445,7 +411,7 @@ void ntpResponseHandle(uint32_t currentMillis)
         Serial.print("\tNTP response:\t");
         Serial.println(UNIXTime);
         lastNTPResponse = currentMillis;
-        addLogData();
+        logger.addLogData(UNIXTime, temperature, humidity);
     } else if ((currentMillis - lastNTPResponse) > 3600000) {
         Serial.println("More than 1 hour since last NTP response. Rebooting.");
         Serial.flush();
@@ -479,12 +445,13 @@ void tempHumidHandle()
             Serial.println("Sensor offline");
             break;
         case 0:
-            root["t"] = t;
-            root["h"] = h;
+            root["t"] = temperature;
+            root["h"] = humidity;
             root["p"] = powerOnStatus;
             String output;
             root.printTo(output);
-            // addLogData(); // uncomment for testing filling logger quicker
+            Serial.println(output);
+            // logger.addLogData(UNIXTime, temperature, humidity); // uncomment for testing filling logger quicker
             webSocket.broadcastTXT(output);
             break;
     }
@@ -513,35 +480,14 @@ int tempHumidRead()
     if (Rcrc == CRC16(buf, 6)) {
         float local_t;
         float local_h;
-        unsigned int temperature = ((buf[4] & 0x7F) << 8) + buf[5];
-        local_t = temperature / 10.0;
+        unsigned int s_temperature = ((buf[4] & 0x7F) << 8) + buf[5];
+        local_t = s_temperature / 10.0;
         local_t = ((buf[4] & 0x80) >> 7) == 1 ? -local_t : local_t;
-        unsigned int humidity = (buf[2] << 8) + buf[3];
-        local_h = humidity / 10.0;
-        t = 0.7 * t + 0.3 * local_t; // low pass filter
-        h = 0.7 * h + 0.3 * local_h;
+        unsigned int s_humidity = (buf[2] << 8) + buf[3];
+        local_h = s_humidity / 10.0;
+        temperature = 0.7 * temperature + 0.3 * local_t; // low pass filter
+        humidity = 0.7 * humidity + 0.3 * local_h;
         return 0;
     }
     return 2;
 }
-
-void addLogData()
-{
-    if (UNIXTime > 0) {
-        if (data.size() > 237) { // max num log points, tune together with json buffer
-            data.remove(0);      // recycle
-        }
-        JsonArray& point = data.createNestedArray();
-        currentTime = UNIXTime + (millis() - lastNTPResponse) / 1000;
-        point.add(currentTime);
-        point.add(t);
-        point.add(h);
-        Serial.print("mem\t");
-        Serial.println(loggerdoc.size());
-        Serial.print("siz\t");
-        Serial.println(data.size());
-        // loggerroot.printTo(Serial);
-        Serial.println();
-    }
-}
-
