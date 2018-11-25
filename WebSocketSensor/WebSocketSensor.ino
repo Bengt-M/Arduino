@@ -8,6 +8,7 @@
 #include <ArduinoJson.h>
 
 #include "Logger.h"
+//todo: factor out time and sensor
 
 //--- include this with your ssid and password
 #include "Password.h"
