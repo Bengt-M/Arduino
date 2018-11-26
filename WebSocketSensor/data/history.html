@@ -46,7 +46,7 @@ function drawChart() {
 		for (i=0;i<jsonObject["col"].length;++i){
 			data.addColumn('number', jsonObject["col"][i]);
 		}
-		for (i=0;i<jsonObject["data"].length;++i){
+		for (i=0;i<jsonObject["data"].length;i++){
 			data.addRow(jsonObject["data"][i]);
 		}
 		var materialOptions = {

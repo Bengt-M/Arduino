@@ -4,11 +4,11 @@
 #include <ESP8266WebServer.h>
 #include <WebSocketsServer.h>
 #include <Wire.h>
-#include <WiFiUdp.h>
 #include <ArduinoJson.h>
 
 #include "Logger.h"
 //todo: factor out time and sensor
+#include "Timer.h"
 
 //--- include this with your ssid and password
 #include "Password.h"
@@ -19,11 +19,8 @@ WebSocketsServer webSocket(81);    // create a websocket server on port 81
 File fsUploadFile;                 // a File variable to temporarily store the received file
 bool powerOnStatus = false;        // The power relay is turned off on startup
 uint8_t buf[8] = {0};
-WiFiUDP UDP;
 IPAddress timeServerIP(10, 45, 77, 1);       // NTP server address
 //static const char* NTPServerName = "time.nist.gov";
-static const int NTP_PACKET_SIZE = 48;  // NTP time stamp is in the first 48 bytes of the message
-byte NTPBuffer[NTP_PACKET_SIZE]; // buffer to hold incoming and outgoing packets
 
 static const uint8_t pin = 2;
 
@@ -34,19 +31,12 @@ uint32_t interval = 100; // ms
 boolean sleeping = true;
 static const uint32_t intervalTempHumidRead = 3000; // ms
 uint32_t prevTempHumidRead = 0; // ms
-uint32_t UNIXTime = 0;
-
-//static const uint32_t intervalNTPStd = 5 * 1000; // ms
-static const uint32_t intervalNTPStd = 15 * 60 * 1000; // ms
-uint32_t intervalNTP = 1000;
-uint32_t prevNTP = 0;
-uint32_t lastNTPResponse = 0;
-uint32_t currentTime = 0;
 
 StaticJsonBuffer<80> doc;
 JsonObject& root = doc.createObject();
 
 Logger logger;
+Timer timer;
 
 /*__________________________________________________________SETUP__________________________________________________________*/
 
@@ -66,18 +56,16 @@ void setup()
     startWebSocket();            // Start a WebSocket server
     startServer();               // Start a HTTP server with a file read handler and an upload handler
     Wire.begin();
-    startUDP();
     // Here is a way to get the IP from DNS. I use a NTP in my router and knows its IP always
     //    if (!WiFi.hostByName(NTPServerName, timeServerIP)) { // Get the IP address of the NTP server
     //        Serial.println("DNS lookup failed. Rebooting.");
     //        Serial.flush();
     //        ESP.reset();
-    Serial.print("Time server IP:\t");
-    Serial.println(timeServerIP);
+    timer.init(&logger, timeServerIP);
     root.printTo(Serial);
     Serial.println();
     logger.init();
-    sendNTPpacket(timeServerIP);               // Send an NTP request
+    timer.sendNTPpacket();               // Send an NTP request
 }
 
 /*__________________________________________________________LOOP__________________________________________________________*/
@@ -103,17 +91,9 @@ void loop()
         prevTempHumidRead = currentMillis;
     }
 
-    /*___________ send ntp request ___________*/
-    if (currentMillis - prevNTP > intervalNTP) { // If time has passed since last NTP request
-        Serial.print(millis());
-        Serial.println("\tSending NTP request ...");
-        sendNTPpacket(timeServerIP);               // Send an NTP request
-        intervalNTP = intervalNTPStd;
-        prevNTP = currentMillis;
+    if (timer.loop(currentMillis)) {
+        logger.addLogData(timer.getCurrentTime(), temperature, humidity);
     }
-
-    /*___________ handle ntp response (if any) ___________*/
-    ntpResponseHandle(currentMillis);
 }
 
 /*__________________________________________________________SETUP_FUNCTIONS__________________________________________________________*/
@@ -139,6 +119,7 @@ void startOTA()   // Start the OTA service
 {
     ArduinoOTA.setHostname(OTAName);
     ArduinoOTA.setPassword(OTAPassword);
+    ArduinoOTA.setPort(8266);
     ArduinoOTA.onStart([]() {
         Serial.println("Start");
         powerOn(false);
@@ -200,14 +181,6 @@ void startServer()   // Start a HTTP server with a file read handler and an uplo
     Serial.println("HTTP server started.");
 }
 
-void startUDP()
-{
-    Serial.println("Starting UDP");
-    UDP.begin(123);                          // Start listening for UDP messages on port 123
-    Serial.print("Local port:\t");
-    Serial.println(UDP.localPort());
-    Serial.println();
-}
 /*__________________________________________________________SERVER_HANDLERS__________________________________________________________*/
 
 void handleNotFound()   // if the requested file or page doesn't exist, return a 404 not found error
@@ -312,15 +285,17 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t* payload,
 
 void printSPIFFS()
 {
-    Serial.println("SPIFFS contents:");
+    FSInfo fs_info;
     Dir dir = SPIFFS.openDir("/");
 
+    Serial.println("SPIFFS contents:");
     while (dir.next()) {                      // List the file system contents
         String fileName = dir.fileName();
         size_t fileSize = dir.fileSize();
         Serial.printf("\tFS File: %s, size: %s\r\n", fileName.c_str(), formatBytes(fileSize).c_str());
     }
-    // TODO: also print free space
+    SPIFFS.info(fs_info);
+    Serial.printf("Using: %s, of: %s\r\n", formatBytes(fs_info.usedBytes).c_str(), formatBytes(fs_info.totalBytes).c_str());
     Serial.println();
 }
 
@@ -388,53 +363,6 @@ uint16_t CRC16(uint8_t* ptr, uint8_t length)
     return crc;
 }
 
-void sendNTPpacket(IPAddress& address)
-{
-    memset(NTPBuffer, 0, NTP_PACKET_SIZE);  // set all bytes in the buffer to 0
-    NTPBuffer[0] = 0b11100011;              // Initialize values needed to form NTP request
-    UDP.beginPacket(address, 123);          // NTP requests are to port 123
-    UDP.write(NTPBuffer, NTP_PACKET_SIZE);
-    UDP.endPacket();
-}
-
-void ntpResponseHandle(uint32_t currentMillis)
-{
-    if (UDP.parsePacket() > 0) { // If there's data
-        UDP.read(NTPBuffer, NTP_PACKET_SIZE); // read the packet into the buffer
-        // Combine the 4 timestamp bytes into one 32-bit number
-        uint32_t NTPTime = (NTPBuffer[40] << 24) | (NTPBuffer[41] << 16) | (NTPBuffer[42] << 8) | NTPBuffer[43];
-        // Convert NTP time to a UNIX timestamp:
-        // Unix time starts on Jan 1 1970. That's 2208988800 seconds in NTP time:
-        const uint32_t seventyYears = 2208988800UL;
-        // subtract seventy years:
-        UNIXTime = NTPTime - seventyYears;
-        Serial.print(millis());
-        Serial.print("\tNTP response:\t");
-        Serial.println(UNIXTime);
-        lastNTPResponse = currentMillis;
-        logger.addLogData(UNIXTime, temperature, humidity);
-    } else if ((currentMillis - lastNTPResponse) > 3600000) {
-        Serial.println("More than 1 hour since last NTP response. Rebooting.");
-        Serial.flush();
-        ESP.reset();
-    }
-    currentTime = UNIXTime + (currentMillis - lastNTPResponse) / 1000;
-}
-
-inline int getSeconds(uint32_t UNIXTime)
-{
-    return UNIXTime % 60;
-}
-
-inline int getMinutes(uint32_t UNIXTime)
-{
-    return UNIXTime / 60 % 60;
-}
-
-inline int getHours(uint32_t UNIXTime)
-{
-    return UNIXTime / 3600 % 24;
-}
 
 void tempHumidHandle()
 {
