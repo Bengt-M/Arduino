@@ -40,12 +40,17 @@ bool Timer::ntpResponseHandle()
         // Unix time starts on Jan 1 1970. That's 2208988800 seconds in NTP time:
         const uint32_t seventyYears = 2208988800UL;
         // subtract seventy years:
-        UNIXTime = NTPTime - seventyYears;
-        Serial.print(millis());
-        Serial.print("\tNTP response:\t");
-        Serial.println(UNIXTime);
-        lastNTPResponse = millis();
-        response = true;
+        uint32_t UNIXTimeN = NTPTime - seventyYears;
+        if (UNIXTimeN > UNIXTime) {
+            UNIXTime = UNIXTimeN;
+            Serial.print(millis());
+            Serial.print("\tNTP response:\t");
+            Serial.println(UNIXTime);
+            lastNTPResponse = millis();
+            response = true;
+        } else {
+            Serial.println("dublicate UNIXTime");
+        }
     } else if ((millis() - lastNTPResponse) > 3600000) {
         Serial.println("More than 1 hour since last NTP response. Rebooting.");
         Serial.flush();

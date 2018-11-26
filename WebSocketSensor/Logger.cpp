@@ -27,6 +27,8 @@ void Logger::addLogData(uint32_t currentTime, float t, float h)
         Serial.println(loggerdoc.size());
         Serial.print("siz\t");
         Serial.println(data.size());
+        Serial.print("log:");
+        point.printTo(Serial);
         // loggerroot.printTo(Serial);
         Serial.println();
     }

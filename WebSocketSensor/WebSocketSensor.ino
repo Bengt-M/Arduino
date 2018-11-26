@@ -379,7 +379,7 @@ void tempHumidHandle()
             root["p"] = powerOnStatus;
             String output;
             root.printTo(output);
-            Serial.println(output);
+//            Serial.println(output);
             // logger.addLogData(UNIXTime, temperature, humidity); // uncomment for testing filling logger quicker
             webSocket.broadcastTXT(output);
             break;
