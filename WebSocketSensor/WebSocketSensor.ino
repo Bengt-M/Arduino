@@ -100,7 +100,7 @@ void loop()
             HTTPClient http;
             http.begin(LOGSERVER); // define in Password.h
             http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-            String s = String("time=") + String(timer.getCurrentTime()/24/60/60 +1/24) + "&t=" + String(temperature, 2) + "&h=" + String(humidity, 1) + "\n";
+            String s = String("time=") + String(timer.getCurrentTime()) + "&t=" + String(temperature, 2) + "&h=" + String(humidity, 1) + "\n";
             Serial.print(s);
 
             int httpCode = http.POST(s);
