@@ -5,6 +5,7 @@
 #include <WebSocketsServer.h>
 #include <Wire.h>
 #include <ArduinoJson.h>
+#include <ESP8266HTTPClient.h>
 
 #include "Logger.h"
 //todo: factor out time and sensor
@@ -22,7 +23,7 @@ uint8_t buf[8] = {0};
 IPAddress timeServerIP(10, 45, 77, 1);       // NTP server address
 //static const char* NTPServerName = "time.nist.gov";
 
-static const uint8_t pin = 2;
+static const uint8_t pin = 2; // physical pin D4
 
 static const uint8_t address = 0xB8 >> 1;
 float temperature = 20.0;
@@ -93,6 +94,22 @@ void loop()
 
     if (timer.loop(currentMillis)) {
         logger.addLogData(timer.getCurrentTime(), temperature, humidity);
+
+        //TODO: detta verkar faktiskt funka. Måste lista ut var det ska ligga
+        if (WiFi.status() == WL_CONNECTED) {
+            HTTPClient http;
+            http.begin(LOGSERVER); // define in Password.h
+            http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+            String s = String("time=") + String(timer.getCurrentTime()/24/60/60 +1/24) + "&t=" + String(temperature, 2) + "&h=" + String(humidity, 1) + "\n";
+            Serial.print(s);
+
+            int httpCode = http.POST(s);
+            String payload = http.getString();
+            Serial.print("http response = ");
+            Serial.println(httpCode);
+            //Serial.println(payload);
+            http.end();
+        }
     }
 }
 
@@ -339,6 +356,7 @@ void powerOn(boolean on)   // set the pin, read status, send to all connected cl
     root["h"] = humidity;
     root["p"] = on;
     root.printTo(Serial);
+    Serial.println();
     String output;
     root.printTo(output);
     webSocket.broadcastTXT(output);
@@ -379,7 +397,7 @@ void tempHumidHandle()
             root["p"] = powerOnStatus;
             String output;
             root.printTo(output);
-//            Serial.println(output);
+            //            Serial.println(output);
             // logger.addLogData(UNIXTime, temperature, humidity); // uncomment for testing filling logger quicker
             webSocket.broadcastTXT(output);
             break;

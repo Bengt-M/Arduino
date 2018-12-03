@@ -16,7 +16,7 @@ void Timer::init(Logger* logger, IPAddress ip)
 
 uint32_t Timer::getCurrentTime()
 {
-    return UNIXTime + (millis() - lastNTPResponse) / 1000;
+    return NTPTime + (millis() - lastNTPResponse) / 1000;
 }
 
 void Timer::sendNTPpacket()
@@ -35,21 +35,16 @@ bool Timer::ntpResponseHandle()
     if (UDP.parsePacket() > 0) { // If there's data
         UDP.read(NTPBuffer, NTP_PACKET_SIZE); // read the packet into the buffer
         // Combine the 4 timestamp bytes into one 32-bit number
-        uint32_t NTPTime = (NTPBuffer[40] << 24) | (NTPBuffer[41] << 16) | (NTPBuffer[42] << 8) | NTPBuffer[43];
-        // Convert NTP time to a UNIX timestamp:
-        // Unix time starts on Jan 1 1970. That's 2208988800 seconds in NTP time:
-        const uint32_t seventyYears = 2208988800UL;
-        // subtract seventy years:
-        uint32_t UNIXTimeN = NTPTime - seventyYears;
-        if (UNIXTimeN > UNIXTime) {
-            UNIXTime = UNIXTimeN;
+        uint32_t nNTPTime = (NTPBuffer[40] << 24) | (NTPBuffer[41] << 16) | (NTPBuffer[42] << 8) | NTPBuffer[43];
+        if (nNTPTime > NTPTime) {
+            NTPTime = nNTPTime;
             Serial.print(millis());
             Serial.print("\tNTP response:\t");
-            Serial.println(UNIXTime);
+            Serial.println(NTPTime);
             lastNTPResponse = millis();
             response = true;
         } else {
-            Serial.println("dublicate UNIXTime");
+            Serial.println("dublicate NtpTime");
         }
     } else if ((millis() - lastNTPResponse) > 3600000) {
         Serial.println("More than 1 hour since last NTP response. Rebooting.");
@@ -72,17 +67,17 @@ bool Timer::loop(const uint32_t currentMillis)
 }
 
 
-inline int getSeconds(uint32_t UNIXTime)
+inline int getSeconds(uint32_t NTPTime)
 {
-    return UNIXTime % 60;
+    return NTPTime % 60;
 }
 
-inline int getMinutes(uint32_t UNIXTime)
+inline int getMinutes(uint32_t NTPTime)
 {
-    return UNIXTime / 60 % 60;
+    return NTPTime / 60 % 60;
 }
 
-inline int getHours(uint32_t UNIXTime)
+inline int getHours(uint32_t NTPTime)
 {
-    return UNIXTime / 3600 % 24;
+    return NTPTime / 3600 % 24;
 }
