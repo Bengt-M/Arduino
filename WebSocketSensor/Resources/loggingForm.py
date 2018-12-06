@@ -31,9 +31,13 @@ if form.getvalue('h'):
    h = form.getvalue('h')
 else:
    h = "Not set"
+if form.getvalue('vcc'):
+   vcc = form.getvalue('vcc')
+else:
+   vcc = "Not set"
 
 # defining a params dict for the parameters to be sent to the API 
-PARAMS = {'Temperature':t, 'Humidity':h, 'Time':time} 
+PARAMS = {'Temperature':t, 'Humidity':h, 'Time':time, 'vcc':vcc} 
 # sending get request and saving the response as response object 
 r = requests.get(url = URL, params = PARAMS) 
 print(r)

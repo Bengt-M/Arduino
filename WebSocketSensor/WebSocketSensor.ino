@@ -14,6 +14,9 @@
 //--- include this with your ssid and password
 #include "Password.h"
 
+
+ADC_MODE(ADC_VCC); //vcc read-mode
+
 ESP8266WiFiMulti wifiMulti;        // Create an instance of the ESP8266WiFiMulti class, called 'wifiMulti'
 ESP8266WebServer server(80);       // create a web server on port 80
 WebSocketsServer webSocket(81);    // create a websocket server on port 81
@@ -24,10 +27,10 @@ IPAddress timeServerIP(10, 45, 77, 1);       // NTP server address
 //static const char* NTPServerName = "time.nist.gov";
 
 static const uint8_t pin = 2; // physical pin D4
-
+uint8_t pinValue = 0;
 static const uint8_t address = 0xB8 >> 1;
-float temperature = 20.0;
-float humidity = 40.0;
+float temperature = -99.0;
+float humidity = -99.0;
 uint32_t interval = 100; // ms
 boolean sleeping = true;
 static const uint32_t intervalTempHumidRead = 3000; // ms
@@ -47,15 +50,15 @@ void setup()
     while (!Serial) {
         delay(1);
     }
-    Serial.println();
+    Serial.println("setup()");
     // prepare pin TODO: Check this with i2c running
     pinMode(pin, OUTPUT);
-    digitalWrite(pin, 0);
+    digitalWrite(pin, pinValue);
     startWiFi();                 // Start a Wi-Fi access point, and try to connect to some given access points. Then wait for either an AP or STA connection
-    startOTA();                  // Start the OTA service
-    startSPIFFS();               // Start the SPIFFS and list all contents
-    startWebSocket();            // Start a WebSocket server
-    startServer();               // Start a HTTP server with a file read handler and an upload handler
+    //    startOTA();                  // Start the OTA service
+    //    startSPIFFS();               // Start the SPIFFS and list all contents
+    //    startWebSocket();            // Start a WebSocket server
+    //    startServer();               // Start a HTTP server with a file read handler and an upload handler
     Wire.begin();
     // Here is a way to get the IP from DNS. I use a NTP in my router and knows its IP always
     //    if (!WiFi.hostByName(NTPServerName, timeServerIP)) { // Get the IP address of the NTP server
@@ -67,6 +70,7 @@ void setup()
     Serial.println();
     logger.init();
     timer.sendNTPpacket();               // Send an NTP request
+    pinMode(0, INPUT_PULLUP);
 }
 
 /*__________________________________________________________LOOP__________________________________________________________*/
@@ -89,26 +93,40 @@ void loop()
             interval = intervalTempHumidRead;
             sleeping = true;
         }
+        pinValue = !pinValue;
+        digitalWrite(pin, pinValue);
         prevTempHumidRead = currentMillis;
     }
 
     if (timer.loop(currentMillis)) {
-        logger.addLogData(timer.getCurrentTime(), temperature, humidity);
+        if (humidity > 0.0) {
+            logger.addLogData(timer.getCurrentTime(), temperature, humidity);
 
-        //TODO: detta verkar faktiskt funka. Måste lista ut var det ska ligga
-        if (WiFi.status() == WL_CONNECTED) {
-            HTTPClient http;
-            http.begin(LOGSERVER); // define in Password.h
-            http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-            String s = String("time=") + String(timer.getCurrentTime()) + "&t=" + String(temperature, 2) + "&h=" + String(humidity, 1) + "\n";
-            Serial.print(s);
+            //TODO: detta verkar faktiskt funka. Måste lista ut var det ska ligga
+            if (WiFi.status() == WL_CONNECTED) {
+                HTTPClient http;
+                float vcc = (float)ESP.getVcc() * 1.096 / 1000.0;
+                Serial.print("vcc=");
+                Serial.println(vcc);
+                http.begin(LOGSERVER); // define in Password.h
+                http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+                String s = String("time=") + String(timer.getCurrentTime())
+                           + "&t=" + String(temperature, 2)
+                           + "&h=" + String(humidity, 1)
+                           + "&vcc=" + String(vcc, 3)
+                           + "\n";
+                Serial.print(s);
 
-            int httpCode = http.POST(s);
-            String payload = http.getString();
-            Serial.print("http response = ");
-            Serial.println(httpCode);
-            //Serial.println(payload);
-            http.end();
+                int httpCode = http.POST(s);
+                String payload = http.getString();
+                Serial.print("http response = ");
+                Serial.println(httpCode);
+                //Serial.println(payload);
+                http.end();
+
+                Serial.println("------------ I'm going into deep sleep now --------------");
+                ESP.deepSleep(5 * 60 * 1000000);
+            }
         }
     }
 }
@@ -119,7 +137,7 @@ void startWiFi()   // Start try to connect to some given access points. Then wai
 {
     WiFi.persistent(true);
     wifiMulti.addAP(WiFiNetwork, Password);    // add Wi-Fi networks you want to connect to (see Password.h)
-    Serial.println("Connecting");
+    Serial.print("Connecting");
     while (wifiMulti.run() != WL_CONNECTED) {       // Wait for the Wi-Fi to connect
         delay(250);
         Serial.print('.');
@@ -386,7 +404,7 @@ void tempHumidHandle()
 {
     switch (tempHumidRead()) {
         case 2:
-            Serial.println("CRC failed");
+            Serial.println("Sensor CRC failed");
             break;
         case 1:
             Serial.println("Sensor offline");
@@ -397,7 +415,7 @@ void tempHumidHandle()
             root["p"] = powerOnStatus;
             String output;
             root.printTo(output);
-            //            Serial.println(output);
+            Serial.println(output);
             // logger.addLogData(UNIXTime, temperature, humidity); // uncomment for testing filling logger quicker
             webSocket.broadcastTXT(output);
             break;
@@ -432,8 +450,13 @@ int tempHumidRead()
         local_t = ((buf[4] & 0x80) >> 7) == 1 ? -local_t : local_t;
         unsigned int s_humidity = (buf[2] << 8) + buf[3];
         local_h = s_humidity / 10.0;
-        temperature = 0.7 * temperature + 0.3 * local_t; // low pass filter
-        humidity = 0.7 * humidity + 0.3 * local_h;
+        if (humidity < -10.0) {
+            temperature = local_t; // no filter first time
+            humidity =  local_h;
+        } else {
+            temperature = 0.7 * temperature + 0.3 * local_t; // low pass filter
+            humidity = 0.7 * humidity + 0.3 * local_h;
+        }
         return 0;
     }
     return 2;
