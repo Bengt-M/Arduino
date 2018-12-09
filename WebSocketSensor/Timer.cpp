@@ -1,8 +1,7 @@
 #include "Timer.h"
 
-void Timer::init(Logger* logger, IPAddress ip)
+void Timer::init(IPAddress ip)
 {
-    this->logger = logger;
     this->ip = ip;
 
     Serial.println("Starting UDP");

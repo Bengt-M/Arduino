@@ -2,15 +2,13 @@
 #define Timer_h
 
 #include <Arduino.h>
-#include "Logger.h"
-#include <ESP8266WiFi.h>
 #include <WiFiUdp.h>
 
 
 class Timer
 {
     public:
-        void init(Logger* logger, IPAddress ip);
+        void init(IPAddress ip);
         void sendNTPpacket();
         bool ntpResponseHandle();
         bool loop(const uint32_t currentMillis);
@@ -23,7 +21,6 @@ class Timer
         uint32_t intervalNTPreq = intervalNTPStd;
         uint32_t prevNTPreq = 0;
         uint32_t lastNTPResponse = 0;
-        Logger* logger;
         IPAddress ip;
         uint32_t NTPTime;
         byte NTPBuffer[NTP_PACKET_SIZE]; // buffer to hold incoming and outgoing packets
