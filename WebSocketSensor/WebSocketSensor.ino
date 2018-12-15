@@ -43,7 +43,11 @@ void setup()
     // prepare pin TODO: Check this with i2c running
     pinMode(pin, OUTPUT);
     digitalWrite(pin, pinValue);
-    startWiFi();                 // Start a Wi-Fi access point, and try to connect to some given access points. Then wait for either an AP or STA connection
+
+    // Start a Wi-Fi access point, and try to connect to some given access points. Then wait for either an AP or STA connection
+    WiFi.persistent(true);
+    wifiMulti.addAP(WiFiNetwork, Password);    // add Wi-Fi networks you want to connect to (see Password.h)
+
     Wire.begin();
     // Here is a way to get the IP from DNS. I use a NTP in my router and knows its IP always
     //    if (!WiFi.hostByName(NTPServerName, timeServerIP)) { // Get the IP address of the NTP server
@@ -53,6 +57,20 @@ void setup()
     timer.init(timeServerIP);
     root.printTo(Serial);
     Serial.println();
+
+    // TODO: Should do all measurements before waiting for WiFi to start
+    Serial.print("Connecting");
+    while (wifiMulti.run() != WL_CONNECTED) {       // Wait for the Wi-Fi to connect
+        delay(250);
+        Serial.print('.');
+    }
+    Serial.println();
+    Serial.print("Connected to ");
+    Serial.println(WiFi.SSID());                    // Tell us what network we're connected to
+    Serial.print("IP address: ");
+    Serial.print(WiFi.localIP());                   // Send the IP address of the ESP8266 to the computer
+    Serial.println();
+
     timer.sendNTPpacket();               // Send an NTP request
     pinMode(0, INPUT_PULLUP);
 }
@@ -109,24 +127,6 @@ void loop()
     }
 }
 
-/*__________________________________________________________SETUP_FUNCTIONS__________________________________________________________*/
-
-void startWiFi()   // Start try to connect to some given access points. Then wait for connection
-{
-    WiFi.persistent(true);
-    wifiMulti.addAP(WiFiNetwork, Password);    // add Wi-Fi networks you want to connect to (see Password.h)
-    Serial.print("Connecting");
-    while (wifiMulti.run() != WL_CONNECTED) {       // Wait for the Wi-Fi to connect
-        delay(250);
-        Serial.print('.');
-    }
-    Serial.println();
-    Serial.print("Connected to ");
-    Serial.println(WiFi.SSID());                    // Tell us what network we're connected to
-    Serial.print("IP address: ");
-    Serial.print(WiFi.localIP());                   // Send the IP address of the ESP8266 to the computer
-    Serial.println();
-}
 
 /*__________________________________________________________ HANDLERS__________________________________________________________*/
 
