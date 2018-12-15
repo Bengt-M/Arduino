@@ -25,7 +25,7 @@ uint8_t buf[8] = {0};
 IPAddress timeServerIP(10, 45, 77, 1);       // NTP server address
 //static const char* NTPServerName = "time.nist.gov";
 
-static const uint8_t pin = 2; // physical pin D4  //TODO: Detta är fel pinne. Jag vill ha den dioden är kopplad till
+static const uint8_t pin = 2; // physical pin D4
 uint8_t pinValue = 0;
 static const uint8_t address = 0xB8 >> 1;
 float temperature = -99.0;
@@ -210,7 +210,7 @@ bool handleFileRead(String path)   // send the right file to the client (if it e
         size_t sent = server.streamFile(file, contentType);    // Send it to the client
         file.close();                                          // Close the file again
         Serial.println(String("\tSent file: ") + path);
-        powerOn();
+        powerOn(powerOnStatus);
         return true;
     }
     Serial.println(String("\tFile Not Found: ") + path);   // If the file doesn't exist, return false
@@ -265,7 +265,7 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t* payload,
         case WStype_CONNECTED: {              // if a new websocket connection is established
                 IPAddress ip = webSocket.remoteIP(num);
                 Serial.printf("[%u] Connected from %d.%d.%d.%d url: %s\n", num, ip[0], ip[1], ip[2], ip[3], payload);
-                powerOn();
+                powerOn(powerOnStatus);
             }
             break;
         case WStype_TEXT:                     // if new text data is received
@@ -331,11 +331,6 @@ String getContentType(String filename)   // determine the filetype of a given fi
     return "text/plain";
 }
 
-void powerOn()
-{
-    powerOn(powerOnStatus); // default is current status
-}
-
 void powerOn(boolean on)   // set the pin, read status, send to all connected clients
 {
     powerOnStatus = on;
@@ -348,6 +343,7 @@ void powerOn(boolean on)   // set the pin, read status, send to all connected cl
     root.printTo(output);
     webSocket.broadcastTXT(output);
 }
+
 
 uint16_t CRC16(uint8_t* ptr, uint8_t length)
 {
@@ -384,7 +380,7 @@ void tempHumidHandle()
             root["p"] = powerOnStatus;
             String output;
             root.printTo(output);
-//            Serial.println(output);
+            //            Serial.println(output);
             // logger.addLogData(UNIXTime, temperature, humidity); // uncomment for testing filling logger quicker
             webSocket.broadcastTXT(output);
             break;
