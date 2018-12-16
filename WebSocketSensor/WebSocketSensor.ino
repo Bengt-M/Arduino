@@ -5,8 +5,7 @@
 #include <WebSocketsServer.h>
 #include <Wire.h>
 #include <ArduinoJson.h>
-#include <ESP8266HTTPClient.h>
-
+#include <FS.h>
 #include "Logger.h"
 //todo: factor out sensor
 #include "Timer.h"
@@ -26,13 +25,12 @@ IPAddress timeServerIP(10, 45, 77, 1);       // NTP server address
 //static const char* NTPServerName = "time.nist.gov";
 
 static const uint8_t pin = 2; // physical pin D4
-uint8_t pinValue = 0;
 static const uint8_t address = 0xB8 >> 1;
 float temperature = -99.0;
 float humidity = -99.0;
 uint32_t interval = 100; // ms
 boolean sleeping = true;
-static const uint32_t intervalTempHumidRead = 3000; // ms
+static const uint32_t intervalTempHumidRead = 6000; // ms
 uint32_t prevTempHumidRead = 0; // ms
 
 StaticJsonBuffer<80> doc;
@@ -52,7 +50,7 @@ void setup()
     Serial.println("setup()");
     // prepare pin TODO: Check this with i2c running
     pinMode(pin, OUTPUT);
-    digitalWrite(pin, pinValue);
+    digitalWrite(pin, powerOnStatus);
     startWiFi();                 // Start a Wi-Fi access point, and try to connect to some given access points. Then wait for either an AP or STA connection
     startOTA();                  // Start the OTA service
     startSPIFFS();               // Start the SPIFFS and list all contents
@@ -67,7 +65,6 @@ void setup()
     timer.init(&logger, timeServerIP);
     root.printTo(Serial);
     Serial.println();
-    logger.init();
     timer.sendNTPpacket();               // Send an NTP request
 }
 
@@ -91,8 +88,6 @@ void loop()
             interval = intervalTempHumidRead;
             sleeping = true;
         }
-        pinValue = !pinValue;
-        digitalWrite(pin, pinValue);
         prevTempHumidRead = currentMillis;
     }
 
@@ -274,13 +269,6 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t* payload,
                 powerOn(true);
             } else if (payload[0] == '0') {   // ...and a 0 when it is off
                 powerOn(false);
-            } else if (payload[0] == 'S') {   // Save all logger data to a SPIFFS file
-                logger.writeLoggerFile();
-            } else if (payload[0] == 'q') { // query for all logger data
-                String output;
-                logger.getAllData(&output);
-                // Serial.println(output);
-                webSocket.sendTXT(num, output);
             }
             break;
     }
@@ -380,7 +368,7 @@ void tempHumidHandle()
             root["p"] = powerOnStatus;
             String output;
             root.printTo(output);
-            //            Serial.println(output);
+            Serial.println(output);
             // logger.addLogData(UNIXTime, temperature, humidity); // uncomment for testing filling logger quicker
             webSocket.broadcastTXT(output);
             break;
@@ -422,6 +410,8 @@ int tempHumidRead()
             temperature = 0.7 * temperature + 0.3 * local_t; // low pass filter
             humidity = 0.7 * humidity + 0.3 * local_h;
         }
+        Serial.print("Sensor temp = ");
+        Serial.println(local_t);
         return 0;
     }
     return 2;
