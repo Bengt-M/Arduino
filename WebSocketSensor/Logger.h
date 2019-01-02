@@ -8,7 +8,7 @@ class Logger
     private:
 
     public:
-        void addLogData(uint32_t currentTime, float t, float h);
+        void addLogData(uint32_t currentTime, char* t, char* h);
 };
 
 #endif // Logger_h

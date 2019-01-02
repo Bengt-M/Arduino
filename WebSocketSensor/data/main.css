@@ -21,13 +21,14 @@ h1 {
     font-size: 32;
 }
 
-center>div {
+center.div {
     padding: 24px 10px 10px 10px;
     box-shadow: 1px 1px 5px #555555;
 }
 
 table {
-    margin: 0px 24px 0px 12px;
+    margin: 0px 10px 0px 10px;
+	width: 100%;
 }
 
 td {

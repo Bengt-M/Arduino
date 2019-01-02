@@ -7,7 +7,7 @@
     <link rel="icon" type="image/png" sizes="144x144"  href="/favicon-144x144.png">
     <link rel="icon" type="image/png" sizes="48x48" href="/favicon.ico">
     <link rel="manifest" href="/manifest.json">
-    <meta name="tdeme-color" content="#00878f">
+    <meta name="theme-color" content="#00878f">
     <meta content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0' name='viewport'>
     <script src="WebSocket.js" type="text/javascript"></script>
 </head>
@@ -19,22 +19,22 @@
         <div>
         	<table>
 		<tr>
-			<td>Temperature</td><td id="tmpCur">xxxx</td>
+			<td></td><td>Min</td><td>Current</td><td>Max</td>
+		</tr>
+		<tr>
+			<td>Temperature</td><td id="tmpMin">00.0</td><td id="tmpCur">xxxx</td><td id="tmpMax">99.9</td>
 		</tr>
   		<tr>
-			<td>Humidity</td><td id="humCur">xxxx</td>
+			<td>Humidity</td><td id="humMin">00</td><td id="humCur">xxxx</td><td id="humMax">99</td>
   		</tr>
 	</table>
         </div>
-	<div>
-           <a class="button" href="/history.html">History</a>
-        </div>
         <header>
-            <h1>Power</h1>
+            <h1></h1>
         </header>
         <div>
             <p style="margin:8px 0px">
-            	<button id="btn1" class="button" style="background-color:#999" onclick="onBtn1();">XXX</button>
+            	<button id="btn1" class="button" style="background-color:#999" onclick="onBtn1();">reset</button>
             </p>
         </div>
     </center>
