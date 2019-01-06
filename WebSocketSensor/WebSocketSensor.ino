@@ -1,5 +1,5 @@
 #include <ezTime.h>
-#include <ESP8266WiFi.h>
+//#include <ESP8266WiFi.h>
 #include <ESP8266WiFiMulti.h>
 #include <ArduinoOTA.h>
 #include <ESP8266WebServer.h>
@@ -22,7 +22,7 @@ File fsUploadFile;                 // a File variable to temporarily store the r
 
 uint32_t interval = 100; // ms
 boolean sleeping = true;
-static const uint32_t intervalTempHumidRead = 6000; // ms
+static const uint32_t intervalTempHumidRead = 8000; // ms
 uint32_t prevTempHumidRead = 0; // ms
 Sensor sensor;
 char output[100];
@@ -30,7 +30,7 @@ char output[100];
 Logger logger;
 U8G2_SH1106_128X64_NONAME_2_SW_I2C
 u8g2(U8G2_R0, /* SCL=*/ 5, /* SDA=*/ 4, /* reset=*/ U8X8_PIN_NONE);   // ESP32 Thing, pure SW emulated I2C
-int secondcount = 1;
+int secondcount = 0;
 char bufferDayName[20];
 char bufferDate[20];
 char bufferAge[20];
@@ -52,18 +52,20 @@ void setup()
     startSPIFFS();               // Start the SPIFFS and list all contents
     startWebSocket();            // Start a WebSocket server
     startServer();               // Start a HTTP server with a file read handler and an upload handler
-    Serial.println();
+    //    Serial.println();
     pinMode(2, OUTPUT);          // GPIO2 (= pin D4) = blue LED
     digitalWrite(2, 1);          // inverted, i.e. light on when 0
+    pinMode(16, OUTPUT);          // GPIO16 (= pin D0) = blue LED
+    digitalWrite(16, 1);          // inverted, i.e. light on when 0
 
     u8g2.begin();
 
-    setInterval(7 * 60);
+    setInterval(10 * 60);
     setDebug(INFO);
     setServer(NTPServerName);
     myLocalTime.setPosix("CET-1CEST,M3.5.0,M10.5.0/3");
     waitForSync();
-    Serial.println(minStr);
+    //    Serial.println(minStr);
 }
 
 /*__________________________________________________________LOOP__________________________________________________________*/
@@ -105,23 +107,25 @@ void loop()
         memcpy(bufferDayName, str.c_str(), str.length());
 
         yield();
-        Serial.print("Sensor.age =");
-        Serial.println(sensor.age());
+        //        Serial.print("Sensor.age =");
+        //        Serial.println(sensor.age());
         sprintf(bufferAge, "%d", sensor.age());
         yield();
 
+        digitalWrite(2, 0);
         // picture loop
         u8g2.firstPage();
         do {
             draw();
         } while (u8g2.nextPage());
+        digitalWrite(2, 1);
         secondcount--;
     }
 
     /*___________ TempHumid sensor ___________*/
     if ((currentMillis - prevTempHumidRead) >= interval) {
         if (sleeping) {
-            digitalWrite(2, 0);
+            digitalWrite(16, 0);
             sensor.wakeup();
             interval = 2;
             sleeping = false;
@@ -129,14 +133,14 @@ void loop()
             handleSensorData();
             interval = intervalTempHumidRead;
             sleeping = true;
-            digitalWrite(2, 1);
+            digitalWrite(16, 1);
         }
         prevTempHumidRead = currentMillis;
     }
 
     if (secondcount <= 0) {
-        secondcount = 7 * 60;
         logger.addLogData(UTC.now(), sensor.temperatureCurrent, sensor.humidityCurrent);
+        secondcount = 7 * 60;
     }
 }
 
@@ -145,6 +149,7 @@ void loop()
 void startWiFi()   // Start try to connect to some given access points. Then wait for connection
 {
     WiFi.persistent(true);
+    WiFi.softAPdisconnect(true);
     wifiMulti.addAP(WiFiNetwork, Password);    // add Wi-Fi networks you want to connect to (see Password.h)
     Serial.println("Connecting");
     while (wifiMulti.run() != WL_CONNECTED) {       // Wait for the Wi-Fi to connect
@@ -215,8 +220,8 @@ void startWebSocket()   // Start a WebSocket server
 
 void startServer()   // Start a HTTP server with a file read handler and an upload handler
 {
-    server.on(" / edit.html",  HTTP_POST, []() {  // If a POST request is sent to the /edit.html address,
-        server.send(200, "text / plain", "");
+    server.on("/edit.html",  HTTP_POST, []() {  // If a POST request is sent to the /edit.html address,
+        server.send(200, "text/plain", "");
     }, handleFileUpload);                       // go to 'handleFileUpload'
     server.onNotFound(
         handleNotFound);          // if someone requests any other file or page, go to function 'handleNotFound' and check if the file exists
@@ -226,17 +231,30 @@ void startServer()   // Start a HTTP server with a file read handler and an uplo
 
 /*__________________________________________________________SERVER_HANDLERS__________________________________________________________*/
 
+void broadcastSensorData()
+{
+    sprintf(output, "{\"t\":\"%s\",\"tmn\":\"%s\",\"tmx\":\"%s\",\"h\":\"%s\",\"hmn\":\"%s\",\"hmx\":\"%s\"}",
+            sensor.temperatureCurrent, sensor.temperatureMin, sensor.temperatureMax,
+            sensor.humidityCurrent, sensor.humidityMin, sensor.humidityMax);
+    Serial.print("output ");
+    Serial.println(output);
+    webSocket.broadcastTXT(output);
+}
+
+
 void handleNotFound()   // if the requested file or page doesn't exist, return a 404 not found error
 {
     if (!handleFileRead(server.uri())) {        // check if the file exists in the flash memory (SPIFFS), if so, send it
-        server.send(404, "text / plain", "404: File Not Found");
+        server.send(404, "text/plain", "404: File Not Found");
     }
 }
 
 bool handleFileRead(String path)   // send the right file to the client (if it exists)
 {
     Serial.println("handleFileRead: " + path);
-    if (path.endsWith(" / ")) path += "index.html";              // If a folder is requested, send the index file
+    if (path.endsWith("/")) {
+        path += "index.html";              // If a folder is requested, send the index file
+    }
     String contentType = getContentType(path);                 // Get the MIME type
     String pathWithGz = path + ".gz";
     if (SPIFFS.exists(pathWithGz)
@@ -261,8 +279,8 @@ void handleFileUpload()   // upload a new file to the SPIFFS
 
     if (upload.status == UPLOAD_FILE_START) {
         path = upload.filename;
-        if (!path.startsWith(" / ")) {
-            path = " / " + path;
+        if (!path.startsWith("/")) {
+            path = "/" + path;
         }
         if (!path.endsWith(".gz")) {                         // The file server always prefers a compressed version of a file
             String pathWithGz = path + ".gz";                // So if an uploaded file is not compressed, the existing compressed
@@ -283,10 +301,10 @@ void handleFileUpload()   // upload a new file to the SPIFFS
             fsUploadFile.close();                               // Close the file again
             Serial.print("handleFileUpload Size: ");
             Serial.println(upload.totalSize);
-            server.sendHeader("Location", " / success.html");     // Redirect the client to the success page
+            server.sendHeader("Location", "/success.html");     // Redirect the client to the success page
             server.send(303);
         } else {
-            server.send(500, "text / plain", "500: couldn't create file");
+            server.send(500, "text/plain", "500: couldn't create file");
         }
     }
 }
@@ -301,12 +319,14 @@ void webSocketEvent(uint8_t num, WStype_t type, uint8_t* payload,
         case WStype_CONNECTED: {              // if a new websocket connection is established
                 IPAddress ip = webSocket.remoteIP(num);
                 Serial.printf("[%u] Connected from %d.%d.%d.%d url: %s\n", num, ip[0], ip[1], ip[2], ip[3], payload);
+                broadcastSensorData();
             }
             break;
         case WStype_TEXT:                     // if new text data is received
             Serial.printf("[%u] get Text: %s\n", num, payload);
             if (payload[0] == 'R') {          // the browser sends an R to reset min and max
                 sensor.reset();
+                broadcastSensorData();
             }
             break;
     }
@@ -368,13 +388,8 @@ void handleSensorData()
             Serial.println("Sensor offline");
             break;
         case 0:
-            sprintf(output, "{\"t\":\"%s\",\"tmn\":\"%s\",\"tmx\":\"%s\",\"h\":\"%s\",\"hmn\":\"%s\",\"hmx\":\"%s\"}",
-                    sensor.temperatureCurrent, sensor.temperatureMin, sensor.temperatureMax,
-                    sensor.humidityCurrent, sensor.humidityMin, sensor.humidityMax);
-            Serial.print("output ");
-            Serial.println(output);
+            broadcastSensorData();
             // logger.addLogData(UNIXTime, temperature, humidity); // uncomment for testing filling logger quicker
-            webSocket.broadcastTXT(output);
             break;
     }
 }

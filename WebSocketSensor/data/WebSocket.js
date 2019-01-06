@@ -26,5 +26,8 @@ connection.onclose = function(){
 	console.log('WebSocket connection closed');
 };
 function onBtn1(){
+	btn1Enable = false;
+	document.getElementById('btn1').innerHTML = '';
+	document.getElementById('btn1').style.backgroundColor = '#222';
 	connection.send('R');
 }

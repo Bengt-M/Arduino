@@ -30,11 +30,11 @@ const uint16_t Sensor::CRC16(const uint8_t* ptr, uint8_t length)
 
 void Sensor::mkStr()
 {
-    Serial.println("Sensor::mkStr()");
+//    Serial.println("Sensor::mkStr()");
     int val = (10.0 * temperature);
     sprintf(temperatureCurrent, "%d.%d", val / 10, val % 10);
-    Serial.println(temperatureCurrent);
-    Serial.println(temperature);
+//    Serial.println(temperatureCurrent);
+//    Serial.println(temperature);
     val = (10.0 * temperatureMn);
     sprintf(temperatureMin, "%d.%d", val / 10, val % 10);
     val = (10.0 * temperatureMx);
@@ -94,8 +94,8 @@ const int Sensor::read()
         local_t = ((buf[4] & 0x80) >> 7) == 1 ? -local_t : local_t;
         unsigned int s_humidity = (buf[2] << 8) + buf[3];
         local_h = s_humidity / 10.0;
-        Serial.print("Sensor temp = ");
-        Serial.println(local_t);
+//        Serial.print("Sensor temp = ");
+//        Serial.println(local_t);
         if (humidity < -10.0) {
             temperature = local_t; // no filter first time
             humidity =  local_h;
@@ -115,8 +115,8 @@ const int Sensor::read()
         if (humidity < humidityMn) {
             humidityMn = humidity;
         }
-        Serial.print("Sensor temp2 = ");
-        Serial.println(temperature);
+//        Serial.print("Sensor temp2 = ");
+//        Serial.println(temperature);
         mkStr();
         lastGoodRead = millis();
         return 0;
