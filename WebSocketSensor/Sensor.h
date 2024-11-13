@@ -30,7 +30,6 @@ class Sensor
         float humidityMx = -99;
         uint8_t buf[8] = {0};
         static const uint8_t address = 0xB8 >> 1;
-
 };
 
 
